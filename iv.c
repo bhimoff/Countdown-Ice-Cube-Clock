@@ -9,6 +9,7 @@
     Canada/US rules by caitsith2
     Germany rules by bastard
  Testmode feature by caitsith2
+ Countdown by Brandon Himoff
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -48,6 +49,13 @@ uint8_t region = REGION_US;
 volatile uint8_t time_s, time_m, time_h;
 // ... and current date
 volatile uint8_t date_m, date_d, date_y;
+// ... and the countdown
+volatile int16_t cd_d;
+volatile int8_t cd_h, cd_m, cd_s;
+
+// hold end of countdown
+volatile uint8_t end_year, end_month, end_day, end_hour, end_min;
+
 
 // how loud is the speaker supposed to be?
 volatile uint8_t volume;
@@ -226,10 +234,10 @@ SIGNAL(SIG_PIN_CHANGE2) {
       tick();                         // make a noise
       // check if we will snag this button press for snoozing
       if (alarming) {
-	// turn on snooze
-	setsnooze();
-	PCMSK2 = _BV(PCINT21) | _BV(PCINT20);
-	return;
+        // turn on snooze
+        setsnooze();
+        PCMSK2 = _BV(PCINT21) | _BV(PCINT20);
+        return;
       }
       last_buttonstate |= 0x1;
       just_pressed |= 0x1;
@@ -246,25 +254,25 @@ SIGNAL(SIG_PIN_CHANGE2) {
       if (PIND & _BV(BUTTON3))        // filter out bounces
       {
         PCMSK2 = _BV(PCINT21) | _BV(PCINT20);
-	return;
+        return;
       }
       buttonholdcounter = 2;          // see if we're press-and-holding
       while (buttonholdcounter) {
-	if (PIND & _BV(BUTTON3)) {        // released
-	  tick();                         // make a noise
-	  last_buttonstate &= ~0x4;
-	  // check if we will snag this button press for snoozing
-	  if (alarming) {
-	    // turn on snooze
-	    setsnooze();
-	    PCMSK2 = _BV(PCINT21) | _BV(PCINT20);
-	    return;
-	  }
-	  DEBUGP("b3");
-	  just_pressed |= 0x4;
-	  PCMSK2 = _BV(PCINT21) | _BV(PCINT20);
-	  return;
-	}
+        if (PIND & _BV(BUTTON3)) {        // released
+          tick();                         // make a noise
+          last_buttonstate &= ~0x4;
+          // check if we will snag this button press for snoozing
+          if (alarming) {
+            // turn on snooze
+            setsnooze();
+            PCMSK2 = _BV(PCINT21) | _BV(PCINT20);
+            return;
+          }
+          DEBUGP("b3");
+          just_pressed |= 0x4;
+          PCMSK2 = _BV(PCINT21) | _BV(PCINT20);
+          return;
+        }
       }
       last_buttonstate |= 0x4;
       pressed |= 0x4;                 // held down
@@ -287,14 +295,14 @@ SIGNAL(SIG_PIN_CHANGE0) {
       if (PINB & _BV(BUTTON2))        // filter out bounces
       {
         PCMSK0 = _BV(PCINT0);
-	return;
+        return;
       }
       tick();                         // make a noise
       // check if we will snag this button press for snoozing
       if (alarming) {
-	setsnooze(); 	// turn on snooze
-	PCMSK0 = _BV(PCINT0);
-	return;
+        setsnooze(); 	// turn on snooze
+        PCMSK0 = _BV(PCINT0);
+        return;
       }
       last_buttonstate |= 0x2;
       just_pressed |= 0x2;
@@ -337,6 +345,7 @@ void checkdstrule(uint8_t day1, uint8_t day2, uint8_t dayofweek, uint8_t month, 
           dst_set=1;
           time_h--;
         }
+        countdown_init(); //recalculate countdown
         return; //Ignore day of week. Set day1 = day2 in this case.
       }
       if(dayofweek == dotw())
@@ -350,6 +359,7 @@ void checkdstrule(uint8_t day1, uint8_t day2, uint8_t dayofweek, uint8_t month, 
           dst_set=1;
           time_h--;
         }
+        countdown_init(); //recalculate countdown
         return; //Used for a range of days,  typically for first sunday, or last sunday type rules.
       }
     }
@@ -383,6 +393,7 @@ SIGNAL (TIMER2_OVF_vect) {
 
   //if(displaymode!=SHOW_TIME)
     time_s++;             // one second has gone by
+    cd_s--;
   //else
   //  time_s=60;  //Accellerate for debugging. Uncomment these lines only for that purpose.
 
@@ -390,6 +401,10 @@ SIGNAL (TIMER2_OVF_vect) {
   if (time_s >= 60) {
     time_s = 0;
     time_m++;
+  }
+  if (cd_s < 0) {
+    cd_s = 59;
+    cd_m--;
   }
 
   // an hour...
@@ -420,12 +435,20 @@ SIGNAL (TIMER2_OVF_vect) {
     eeprom_write_byte((uint8_t *)EE_HOUR, time_h);
     eeprom_write_byte((uint8_t *)EE_MIN, time_m);
   }
-
+  if (cd_m < 0) {
+    cd_m = 59;
+    cd_h--; 
+  }
+  
   // a day....
   if (time_h >= 24) {
     time_h = 0;
     date_d++;
     eeprom_write_byte((uint8_t *)EE_DAY, date_d);
+  }
+  if (cd_h < 0) {
+    cd_h = 23;
+    cd_d--;
   }
 
   /*
@@ -467,6 +490,18 @@ SIGNAL (TIMER2_OVF_vect) {
       display_str("        ");
     } else {
       display_time(time_h, time_m, time_s);
+    }
+    if (alarm_on)
+      display[0] |= 0x2;
+    else 
+      display[0] &= ~0x2;
+    
+  }
+  if (displaymode == SHOW_COUNTDOWN) {
+    if (timeunknown && (time_s % 2)) {
+      display_str("        ");
+    } else {
+      display_countdown(cd_d, cd_h, cd_m, cd_s);
     }
     if (alarm_on)
       display[0] |= 0x2;
@@ -524,8 +559,8 @@ SIGNAL(SIG_COMPARATOR) {
       BOOST_PORT &= ~_BV(BOOST); // pull boost fet low
       SPCR  &= ~_BV(SPE); // turn off spi
       if (restored) {
-	eeprom_write_byte((uint8_t *)EE_MIN, time_m);
-	eeprom_write_byte((uint8_t *)EE_SEC, time_s);
+        eeprom_write_byte((uint8_t *)EE_MIN, time_m);
+        eeprom_write_byte((uint8_t *)EE_SEC, time_s);
       }
       DEBUGP("z");
       TCCR0B = 0; // no boost
@@ -541,8 +576,8 @@ SIGNAL(SIG_COMPARATOR) {
     //DEBUGP("LOW");
     if (sleepmode) {
       if (restored) {
-	eeprom_write_byte((uint8_t *)EE_MIN, time_m);
-	eeprom_write_byte((uint8_t *)EE_SEC, time_s);
+        eeprom_write_byte((uint8_t *)EE_MIN, time_m);
+        eeprom_write_byte((uint8_t *)EE_SEC, time_s);
       }
       DEBUGP("WAKERESET"); 
       app_start();
@@ -554,7 +589,7 @@ void initeeprom(void) {
   if(eeprom_read_byte((uint8_t *)EE_INIT)!=1)
   {
     eeprom_write_byte((uint8_t*)EE_INIT, 1);  //Initialize one time.
-    eeprom_write_byte((uint8_t*)EE_YEAR, 0);
+    eeprom_write_byte((uint8_t*)EE_YEAR, 11);
     eeprom_write_byte((uint8_t*)EE_MONTH, 1);
     eeprom_write_byte((uint8_t*)EE_DAY, 1);   //Jan 1, 2000
     eeprom_write_byte((uint8_t*)EE_HOUR, 0);
@@ -567,6 +602,11 @@ void initeeprom(void) {
     eeprom_write_byte((uint8_t*)EE_REGION, REGION_US);  //12 Hour mode
     eeprom_write_byte((uint8_t*)EE_SNOOZE, 10);     //10 Minute Snooze. (If compiled in.)
     eeprom_write_byte((uint8_t*)EE_DST, 0);         //No Daylight Saving Time
+    eeprom_write_byte((uint8_t*)EE_CD_YEAR, 11);         //Countdown to Date
+    eeprom_write_byte((uint8_t*)EE_CD_MONTH, 1); 
+    eeprom_write_byte((uint8_t*)EE_CD_DAY, 0); 
+    eeprom_write_byte((uint8_t*)EE_CD_HOUR, 0); 
+    eeprom_write_byte((uint8_t*)EE_CD_MIN, 0); 
     beep(3000,2);                                   //And acknowledge EEPROM written.
   }
 
@@ -1007,61 +1047,74 @@ int main(void) {
       just_pressed = 0;
       switch(displaymode) {
       case (SHOW_TIME):
-	displaymode = SET_ALARM;
-	display_str("set alarm");
-	set_alarm();
-	break;
+        displaymode = SHOW_COUNTDOWN;
+        break;
+      case (SHOW_COUNTDOWN):
+        displaymode = SET_ALARM;
+        display_str("set alarm");
+        set_alarm();
+        break;
       case (SET_ALARM):
-	displaymode = SET_TIME;
-	display_str("set time");
-	set_time();
-	timeunknown = 0;
-	break;
+        displaymode = SET_TIME;
+        display_str("set time");
+        set_time();
+        timeunknown = 0;
+        break;
       case (SET_TIME):
-	displaymode = SET_DATE;
-	display_str("set date");
-	set_date();
-	break;
+        displaymode = SET_DATE;
+        display_str("set date");
+        set_date();
+        break;
       case (SET_DATE):
-	displaymode = SET_BRIGHTNESS;
-	display_str("set brit");
-	set_brightness();
-	break;
+        displaymode = SET_COUNTDOWN_DATE;
+        display_str("cnt date");
+        set_cd_date();
+        break;
+      case (SET_COUNTDOWN_DATE):
+        displaymode = SET_COUNTDOWN_TIME;
+        display_str("cnt time");
+        set_cd_time();
+        break;
+      case (SET_COUNTDOWN_TIME):
+        displaymode = SET_BRIGHTNESS;
+        display_str("set brit");
+        set_brightness();
+        break;
       case (SET_BRIGHTNESS):
-	displaymode = SET_VOLUME;
-	display_str("set vol ");
-	set_volume();
-	break;
+        displaymode = SET_VOLUME;
+        display_str("set vol ");
+        set_volume();
+        break;
       case (SET_VOLUME):
-	displaymode = SET_REGION;
-	display_str("set regn");
-	set_region();
-	break;
+        displaymode = SET_REGION;
+        display_str("set regn");
+        set_region();
+        break;
       case (SET_REGION):    	
 #ifdef FEATURE_DST
-  displaymode = SET_DAYLIGHTSAVINGTIME;
-  display_str("set dst ");
-  set_dst();
-  break;
+        displaymode = SET_DAYLIGHTSAVINGTIME;
+        display_str("set dst ");
+        set_dst();
+        break;
       case (SET_DAYLIGHTSAVINGTIME):
 #endif
 #ifdef FEATURE_TESTMODE
-  displaymode = TESTMODE;
-  display_str("testmode");
-  set_test();
-  break;
+        displaymode = TESTMODE;
+        display_str("testmode");
+        set_test();
+        break;
       case (TESTMODE):
 #endif
 #ifdef FEATURE_SETSNOOZETIME  
-	displaymode = SET_SNOOZE;
-	display_str("set snoz");
-	set_snooze();
-	break;
+        displaymode = SET_SNOOZE;
+        display_str("set snoz");
+        set_snooze();
+        break;
       case (SET_SNOOZE):
 #endif
       default:
-	displaymode = SHOW_TIME;
-      }
+        displaymode = SHOW_TIME;
+      } // end of switch
     } else if ((just_pressed & 0x2) || (just_pressed & 0x4)) {
       just_pressed = 0;
       displaymode = NONE;
@@ -1111,44 +1164,44 @@ void set_alarm(void)
     if (just_pressed & 0x2) {
       just_pressed = 0;
       if (mode == SHOW_MENU) {
-	// ok now its selected
-	mode = SET_HOUR;
-	display_alarm(hour, min);
-	display[1] |= 0x1;
-	display[2] |= 0x1;	
+        // ok now its selected
+        mode = SET_HOUR;
+        display_alarm(hour, min);
+        display[1] |= 0x1;
+        display[2] |= 0x1;	
       } else if (mode == SET_HOUR) {
-	mode = SET_MIN;
-	display_alarm(hour, min);
-	display[4] |= 0x1;
-	display[5] |= 0x1;
+        mode = SET_MIN;
+        display_alarm(hour, min);
+        display[4] |= 0x1;
+        display[5] |= 0x1;
       } else {
-	// done!
-	alarm_h = hour;
-	alarm_m = min;
-	eeprom_write_byte((uint8_t *)EE_ALARM_HOUR, alarm_h);    
-	eeprom_write_byte((uint8_t *)EE_ALARM_MIN, alarm_m);    
-	displaymode = SHOW_TIME;
-	return;
+        // done!
+        alarm_h = hour;
+        alarm_m = min;
+        eeprom_write_byte((uint8_t *)EE_ALARM_HOUR, alarm_h);    
+        eeprom_write_byte((uint8_t *)EE_ALARM_MIN, alarm_m);    
+        displaymode = SHOW_TIME;
+        return;
       }
     }
     if ((just_pressed & 0x4) || (pressed & 0x4)) {
       just_pressed = 0;
 
       if (mode == SET_HOUR) {
-	hour = (hour+1) % 24;
-	display_alarm(hour, min);
-	display[1] |= 0x1;
-	display[2] |= 0x1;
+        hour = (hour+1) % 24;
+        display_alarm(hour, min);
+        display[1] |= 0x1;
+        display[2] |= 0x1;
       }
       if (mode == SET_MIN) {
-	min = (min+1) % 60;
-	display_alarm(hour, min);
-	display[4] |= 0x1;
-	display[5] |= 0x1;
+        min = (min+1) % 60;
+        display_alarm(hour, min);
+        display[4] |= 0x1;
+        display[5] |= 0x1;
       }
 
       if (pressed & 0x4)
-	delayms(75);
+        delayms(75);
     }
   }
 }
@@ -1180,30 +1233,30 @@ void set_time(void)
     if (just_pressed & 0x2) {
       just_pressed = 0;
       if (mode == SHOW_MENU) {
-	hour = time_h;
-	min = time_m;
-	sec = time_s;
+        hour = time_h;
+        min = time_m;
+        sec = time_s;
 
-	// ok now its selected
-	mode = SET_HOUR;
-	display_time(hour, min, sec);
-	display[1] |= 0x1;
-	display[2] |= 0x1;	
+        // ok now its selected
+        mode = SET_HOUR;
+        display_time(hour, min, sec);
+        display[1] |= 0x1;
+        display[2] |= 0x1;	
       } else if (mode == SET_HOUR) {
-	mode = SET_MIN;
-	display_time(hour, min, sec);
-	display[4] |= 0x1;
-	display[5] |= 0x1;
+        mode = SET_MIN;
+        display_time(hour, min, sec);
+        display[4] |= 0x1;
+        display[5] |= 0x1;
       } else if (mode == SET_MIN) {
-	mode = SET_SEC;
-	display_time(hour, min, sec);
-	display[7] |= 0x1;
-	display[8] |= 0x1;
+        mode = SET_SEC;
+        display_time(hour, min, sec);
+        display[7] |= 0x1;
+        display[8] |= 0x1;
       } else {
-	// done!
-	time_h = hour;
-	time_m = min;
-	time_s = sec;
+        // done!
+        time_h = hour;
+        time_m = min;
+        time_s = sec;
 #ifdef FEATURE_DST
   #ifdef DST_USA
   if(dst_on==DST_USA)
@@ -1214,43 +1267,45 @@ void set_time(void)
     dst_set = (hour <= 2) ? 1 : 0;
   #endif
 #endif
-	displaymode = SHOW_TIME;
-	return;
+        displaymode = SHOW_TIME;
+        return;
       }
     }
     if ((just_pressed & 0x4) || (pressed & 0x4)) {
       just_pressed = 0;
       
       if (mode == SET_HOUR) {
-	hour = (hour+1) % 24;
-	display_time(hour, min, sec);
-	display[1] |= 0x1;
-	display[2] |= 0x1;
-	time_h = hour;
-	eeprom_write_byte((uint8_t *)EE_HOUR, time_h);    
+        hour = (hour+1) % 24;
+        display_time(hour, min, sec);
+        display[1] |= 0x1;
+        display[2] |= 0x1;
+        time_h = hour;
+        eeprom_write_byte((uint8_t *)EE_HOUR, time_h);    
+        countdown_init(); //recalculate countdown
       }
       if (mode == SET_MIN) {
-	min = (min+1) % 60;
-	display_time(hour, min, sec);
-	display[4] |= 0x1;
-	display[5] |= 0x1;
-	eeprom_write_byte((uint8_t *)EE_MIN, time_m);
-	time_m = min;
+        min = (min+1) % 60;
+        display_time(hour, min, sec);
+        display[4] |= 0x1;
+        display[5] |= 0x1;
+        eeprom_write_byte((uint8_t *)EE_MIN, time_m);
+        time_m = min;
+        countdown_init(); //recalculate countdown
       }
       if ((mode == SET_SEC) ) {
-	sec = (sec+1) % 60;
-	display_time(hour, min, sec);
-	display[7] |= 0x1;
-	display[8] |= 0x1;
-	time_s = sec;
+        sec = (sec+1) % 60;
+        display_time(hour, min, sec);
+        display[7] |= 0x1;
+        display[8] |= 0x1;
+        time_s = sec;
+        countdown_init(); //recalculate countdown
       }
       
       if (pressed & 0x4)
-	delayms(75);
+        delayms(75);
     }
   }
 }
-
 
 
 void set_date(void) {
@@ -1274,82 +1329,266 @@ void set_date(void) {
 
       just_pressed = 0;
       if (mode == SHOW_MENU) {
-	// start!
-	if (region == REGION_US) {
-	  mode = SET_MONTH;
-	}
-	else {
-	  DEBUGP("Set day");
-	  mode = SET_DAY;
-	}
-	display_date(DATE);
-	display[1] |= 0x1;
-	display[2] |= 0x1;
+        // start!
+        if (region == REGION_US) {
+          mode = SET_MONTH;
+        }
+        else {
+          DEBUGP("Set day");
+          mode = SET_DAY;
+        }
+        display_date(DATE);
+        display[1] |= 0x1;
+        display[2] |= 0x1;
       } else if (((mode == SET_MONTH) && (region == REGION_US)) ||
-		 ((mode == SET_DAY) && (region == REGION_EU))) {
-	if (region == REGION_US)
-	  mode = SET_DAY;
-	else
-	  mode = SET_MONTH;
-	display_date(DATE);
-	display[4] |= 0x1;
-	display[5] |= 0x1;
+                 ((mode == SET_DAY) && (region == REGION_EU))) {
+        if (region == REGION_US)
+          mode = SET_DAY;
+        else
+          mode = SET_MONTH;
+        display_date(DATE);
+        display[4] |= 0x1;
+        display[5] |= 0x1;
       } else if (((mode == SET_DAY) && (region == REGION_US)) ||
-	((mode == SET_MONTH) && (region == REGION_EU))) {
-	mode = SET_YEAR;
-	display_date(DATE);
-	display[7] |= 0x1;
-	display[8] |= 0x1;
+        ((mode == SET_MONTH) && (region == REGION_EU))) {
+        mode = SET_YEAR;
+        display_date(DATE);
+        display[7] |= 0x1;
+        display[8] |= 0x1;
       } else {
-	displaymode = NONE;
-	display_date(DATE);
-	delayms(1500);
-	displaymode = SHOW_TIME;
-	return;
+        displaymode = NONE;
+        display_date(DATE);
+        delayms(1500);
+        displaymode = SHOW_TIME;
+        return;
       }
     }
     if ((just_pressed & 0x4) || (pressed & 0x4)) {
       just_pressed = 0;
       if (mode == SET_MONTH) {
-	date_m++;
-	if (date_m >= 13)
-	  date_m = 1;
-	display_date(DATE);
-	if (region == REGION_US) {
-	  display[1] |= 0x1;
-	  display[2] |= 0x1;
-	} else {
-	  display[4] |= 0x1;
-	  display[5] |= 0x1;
-	}
-	eeprom_write_byte((uint8_t *)EE_MONTH, date_m);    
+        date_m++;
+        if (date_m >= 13)
+          date_m = 1;
+        display_date(DATE);
+        if (region == REGION_US) {
+          display[1] |= 0x1;
+          display[2] |= 0x1;
+        } else {
+          display[4] |= 0x1;
+          display[5] |= 0x1;
+        }
+        eeprom_write_byte((uint8_t *)EE_MONTH, date_m);  
+        countdown_init(); //recalculate countdown
       }
       if (mode == SET_DAY) {
-	date_d++;
-	if (date_d > 31)
-	  date_d = 1;
-	display_date(DATE);
+        date_d++;
+        if (date_d > 31)
+          date_d = 1;
+        display_date(DATE);
 
-	if (region == REGION_EU) {
-	  display[1] |= 0x1;
-	  display[2] |= 0x1;
-	} else {
-	  display[4] |= 0x1;
-	  display[5] |= 0x1;
-	}
-	eeprom_write_byte((uint8_t *)EE_DAY, date_d);    
+        if (region == REGION_EU) {
+          display[1] |= 0x1;
+          display[2] |= 0x1;
+        } else {
+          display[4] |= 0x1;
+          display[5] |= 0x1;
+        }
+        eeprom_write_byte((uint8_t *)EE_DAY, date_d);    
+        countdown_init(); //recalculate countdown
       }
       if (mode == SET_YEAR) {
-	date_y++;
-	date_y %= 100;
-	display_date(DATE);
-	display[7] |= 0x1;
-	display[8] |= 0x1;
-	eeprom_write_byte((uint8_t *)EE_YEAR, date_y);    
+        date_y++;
+        date_y %= 100;
+        display_date(DATE);
+        display[7] |= 0x1;
+        display[8] |= 0x1;
+        eeprom_write_byte((uint8_t *)EE_YEAR, date_y);    
+        countdown_init(); //recalculate countdown
       }
 
       if (pressed & 0x4)
-	delayms(60);
+        delayms(60);
+    }
+  }
+}
+
+
+void set_cd_date(void) {
+  uint8_t mode = SHOW_MENU;
+
+  timeoutcounter = INACTIVITYTIMEOUT;;  
+
+  while (1) {
+    if (just_pressed || pressed) {
+      timeoutcounter = INACTIVITYTIMEOUT;;  
+      // timeout w/no buttons pressed after 3 seconds?
+    } else if (!timeoutcounter) {
+      //timed out!
+      displaymode = SHOW_TIME;     
+      return;
+    }
+    if (just_pressed & 0x1) { // mode change
+      return;
+    }
+    if (just_pressed & 0x2) {
+
+      just_pressed = 0;
+      if (mode == SHOW_MENU) {
+        // start!
+        if (region == REGION_US) {
+          mode = SET_MONTH;
+        }
+        else {
+          DEBUGP("Set day");
+          mode = SET_DAY;
+        }
+        display_cd_date();
+        display[1] |= 0x1;
+        display[2] |= 0x1;
+      } else if (((mode == SET_MONTH) && (region == REGION_US)) ||
+                 ((mode == SET_DAY) && (region == REGION_EU))) {
+        if (region == REGION_US)
+          mode = SET_DAY;
+        else
+          mode = SET_MONTH;
+        display_cd_date();
+        display[4] |= 0x1;
+        display[5] |= 0x1;
+      } else if (((mode == SET_DAY) && (region == REGION_US)) ||
+        ((mode == SET_MONTH) && (region == REGION_EU))) {
+        mode = SET_YEAR;
+        display_cd_date();
+        display[7] |= 0x1;
+        display[8] |= 0x1;
+      } else {
+        displaymode = NONE;
+        display_cd_date();
+        delayms(1500);
+        displaymode = SHOW_TIME;
+        return;
+      }
+    }
+    if ((just_pressed & 0x4) || (pressed & 0x4)) {
+      just_pressed = 0;
+      if (mode == SET_MONTH) {
+        end_month++;
+        if (end_month >= 13)
+          end_month = 1;
+        display_cd_date();
+        if (region == REGION_US) {
+          display[1] |= 0x1;
+          display[2] |= 0x1;
+        } else {
+          display[4] |= 0x1;
+          display[5] |= 0x1;
+        }
+        eeprom_write_byte((uint8_t *)EE_CD_MONTH, end_month);  
+        countdown_init(); //recalculate countdown
+      }
+      if (mode == SET_DAY) {
+        end_day++;
+        if (end_day > 31)
+          end_day = 1;
+        display_cd_date();
+
+        if (region == REGION_EU) {
+          display[1] |= 0x1;
+          display[2] |= 0x1;
+        } else {
+          display[4] |= 0x1;
+          display[5] |= 0x1;
+        }
+        eeprom_write_byte((uint8_t *)EE_CD_DAY, end_day);    
+        countdown_init(); //recalculate countdown
+      }
+      if (mode == SET_YEAR) {
+        end_year++;
+        end_year %= 100;
+        display_cd_date();
+        display[7] |= 0x1;
+        display[8] |= 0x1;
+        eeprom_write_byte((uint8_t *)EE_CD_YEAR, end_year);    
+        countdown_init(); //recalculate countdown
+      }
+
+      if (pressed & 0x4)
+        delayms(60);
+    }
+  }
+}
+
+
+void set_cd_time(void) 
+{
+  uint8_t mode;
+  uint8_t hour, min, sec;
+    
+  hour = min = sec = 0;
+  mode = SHOW_MENU;
+
+  hour = end_hour;
+  min = end_min;
+  sec = 0;
+  
+  timeoutcounter = INACTIVITYTIMEOUT;
+  
+  while (1) {
+    if (just_pressed & 0x1) { // mode change
+      return;
+    }
+    if (just_pressed || pressed) {
+      timeoutcounter = INACTIVITYTIMEOUT;  
+      // timeout w/no buttons pressed after 3 seconds?
+    } else if (!timeoutcounter) {
+      //timed out!
+      displaymode = SHOW_TIME;     
+      end_hour = hour;
+      end_min = min;
+        eeprom_write_byte((uint8_t *)EE_CD_HOUR, end_hour);    
+        eeprom_write_byte((uint8_t *)EE_CD_MIN, end_min);    
+      return;
+    }
+    if (just_pressed & 0x2) {
+      just_pressed = 0;
+      if (mode == SHOW_MENU) {
+        // ok now its selected
+        mode = SET_HOUR;
+        display_alarm(hour, min);
+        display[1] |= 0x1;
+        display[2] |= 0x1;	
+      } else if (mode == SET_HOUR) {
+        mode = SET_MIN;
+        display_alarm(hour, min);
+        display[4] |= 0x1;
+        display[5] |= 0x1;
+      } else {
+        // done!
+        end_hour = hour;
+        end_min = min;
+        eeprom_write_byte((uint8_t *)EE_CD_HOUR, end_hour);    
+        eeprom_write_byte((uint8_t *)EE_CD_MIN, end_min);    
+        displaymode = SHOW_TIME;
+        return;
+      }
+    }
+    if ((just_pressed & 0x4) || (pressed & 0x4)) {
+      just_pressed = 0;
+
+      if (mode == SET_HOUR) {
+        hour = (hour+1) % 24;
+        display_alarm(hour, min);
+        display[1] |= 0x1;
+        display[2] |= 0x1;
+      }
+      if (mode == SET_MIN) {
+        min = (min+1) % 60;
+        display_alarm(hour, min);
+        display[4] |= 0x1;
+        display[5] |= 0x1;
+      }
+
+      if (pressed & 0x4)
+        delayms(75);
     }
   }
 }
@@ -1377,34 +1616,34 @@ void set_brightness(void) {
 
       just_pressed = 0;
       if (mode == SHOW_MENU) {
-	// start!
-	mode = SET_BRITE;
-	// display brightness
-	display_str("brite ");
-	display_brightness(brightness_level);
+        // start!
+        mode = SET_BRITE;
+        // display brightness
+        display_str("brite ");
+        display_brightness(brightness_level);
       } else {	
-	displaymode = SHOW_TIME;
-	eeprom_write_byte((uint8_t *)EE_BRIGHT, brightness_level);
-	return;
+        displaymode = SHOW_TIME;
+        eeprom_write_byte((uint8_t *)EE_BRIGHT, brightness_level);
+        return;
       }
     }
     if ((just_pressed & 0x4) || (pressed & 0x4)) {
       just_pressed = 0;
       if (mode == SET_BRITE) {
         // Increment brightness level. Zero means auto-dim.
-	if (brightness_level == 0) {
-	  brightness_level = BRIGHTNESS_MIN;
-	} else {
-	  brightness_level += BRIGHTNESS_INCREMENT;
-	  if (brightness_level > BRIGHTNESS_MAX) {
+        if (brightness_level == 0) {
+          brightness_level = BRIGHTNESS_MIN;
+        } else {
+          brightness_level += BRIGHTNESS_INCREMENT;
+          if (brightness_level > BRIGHTNESS_MAX) {
 #ifdef FEATURE_AUTODIM
-	    brightness_level = 0;
+            brightness_level = 0;
 #else
-	    brightness_level = BRIGHTNESS_MIN;
+            brightness_level = BRIGHTNESS_MIN;
 #endif
-	  }
-	}
-	display_brightness(brightness_level);
+          }
+        }
+        display_brightness(brightness_level);
       }
     }
   }
@@ -1446,8 +1685,8 @@ void set_dst(void) {
     if (just_pressed & 0x2) {
       just_pressed = 0;
       if (mode == SHOW_MENU) {
-	// start!
-	mode = SET_DST;
+        // start!
+        mode = SET_DST;
   switch(dst_on)
   {
     #ifdef DST_USA
@@ -1464,14 +1703,14 @@ void set_dst(void) {
       display_str("dst off ");
   }
       } else {	
-	displaymode = SHOW_TIME;
-	return;
+        displaymode = SHOW_TIME;
+        return;
       }
     }
     if (just_pressed & 0x4) {
       just_pressed = 0;
       if (mode == SET_DST) {
-	  dst_set = 0;
+          dst_set = 0;
     switch(dst_on)
     {
       case (DST_OFF):
@@ -1491,7 +1730,7 @@ void set_dst(void) {
         dst_on = DST_OFF;
         display_str("dst off ");
     }
-	eeprom_write_byte((uint8_t *)EE_DST, dst_on);
+        eeprom_write_byte((uint8_t *)EE_DST, dst_on);
       }
     }
   }
@@ -1519,8 +1758,8 @@ void set_test(void) {
     if (just_pressed & 0x2) {
       just_pressed = 0;
       if (mode == SHOW_MENU) {
-	// start!
-	      testmode(1);
+        // start!
+              testmode(1);
         displaymode = SHOW_TIME;
         return;
       }
@@ -1554,39 +1793,39 @@ void set_volume(void) {
     if (just_pressed & 0x2) {
       just_pressed = 0;
       if (mode == SHOW_MENU) {
-	// start!
-	mode = SET_VOL;
-	// display volume
-	if (volume) {
-	  display_str("vol high");
-	  display[5] |= 0x1;
-	} else {
-	  display_str("vol  low");
-	}
-	display[6] |= 0x1;
-	display[7] |= 0x1;
-	display[8] |= 0x1;
+        // start!
+        mode = SET_VOL;
+        // display volume
+        if (volume) {
+          display_str("vol high");
+          display[5] |= 0x1;
+        } else {
+          display_str("vol  low");
+        }
+        display[6] |= 0x1;
+        display[7] |= 0x1;
+        display[8] |= 0x1;
       } else {	
-	displaymode = SHOW_TIME;
-	return;
+        displaymode = SHOW_TIME;
+        return;
       }
     }
     if (just_pressed & 0x4) {
       just_pressed = 0;
       if (mode == SET_VOL) {
-	volume = !volume;
-	if (volume) {
-	  display_str("vol high");
-	  display[5] |= 0x1;
-	} else {
-	  display_str("vol  low");
-	}
-	display[6] |= 0x1;
-	display[7] |= 0x1;
-	display[8] |= 0x1;
-	eeprom_write_byte((uint8_t *)EE_VOLUME, volume);
-	speaker_init();
-	beep(4000, 1);
+        volume = !volume;
+        if (volume) {
+          display_str("vol high");
+          display[5] |= 0x1;
+        } else {
+          display_str("vol  low");
+        }
+        display[6] |= 0x1;
+        display[7] |= 0x1;
+        display[8] |= 0x1;
+        eeprom_write_byte((uint8_t *)EE_VOLUME, volume);
+        speaker_init();
+        beep(4000, 1);
       }
     }
   }
@@ -1616,29 +1855,29 @@ void set_region(void) {
     if (just_pressed & 0x2) {
       just_pressed = 0;
       if (mode == SHOW_MENU) {
-	// start!
-	mode = SET_REG;
-	// display region
-	if (region == REGION_US) {
-	  display_str("usa-12hr");
-	} else {
-	  display_str("eur-24hr");
-	}
+        // start!
+        mode = SET_REG;
+        // display region
+        if (region == REGION_US) {
+          display_str("usa-12hr");
+        } else {
+          display_str("eur-24hr");
+        }
       } else {	
-	displaymode = SHOW_TIME;
-	return;
+        displaymode = SHOW_TIME;
+        return;
       }
     }
     if (just_pressed & 0x4) {
       just_pressed = 0;
       if (mode == SET_REG) {
-	region = !region;
-	if (region == REGION_US) {
-	  display_str("usa-12hr");
-	} else {
-	  display_str("eur-24hr");
-	}
-	eeprom_write_byte((uint8_t *)EE_REGION, region);
+        region = !region;
+        if (region == REGION_US) {
+          display_str("usa-12hr");
+        } else {
+          display_str("eur-24hr");
+        }
+        eeprom_write_byte((uint8_t *)EE_REGION, region);
       }
     }
   }
@@ -1669,30 +1908,30 @@ void set_snooze(void) {
 
       just_pressed = 0;
       if (mode == SHOW_MENU) {
-	// start!
-	mode = SET_SNOOZE;
-	// display snooze
-	display_str("   minut");
-	display[1] = pgm_read_byte(numbertable_p + (snooze / 10)) | 0x1;
-	display[2] = pgm_read_byte(numbertable_p + (snooze % 10)) | 0x1;
+        // start!
+        mode = SET_SNOOZE;
+        // display snooze
+        display_str("   minut");
+        display[1] = pgm_read_byte(numbertable_p + (snooze / 10)) | 0x1;
+        display[2] = pgm_read_byte(numbertable_p + (snooze % 10)) | 0x1;
       } else { 
-	displaymode = SHOW_TIME;
-	return;
+        displaymode = SHOW_TIME;
+        return;
       }
     }
     if ((just_pressed & 0x4) || (pressed & 0x4)) {
       just_pressed = 0;
       if (mode == SET_SNOOZE) {
         snooze ++;
-	if (snooze >= 100)
-	  snooze = 0;
-	display[1] = pgm_read_byte(numbertable_p + (snooze / 10)) | 0x1;
-	display[2] = pgm_read_byte(numbertable_p + (snooze % 10)) | 0x1;
-	eeprom_write_byte((uint8_t *)EE_SNOOZE, snooze);
+        if (snooze >= 100)
+          snooze = 0;
+        display[1] = pgm_read_byte(numbertable_p + (snooze / 10)) | 0x1;
+        display[2] = pgm_read_byte(numbertable_p + (snooze % 10)) | 0x1;
+        eeprom_write_byte((uint8_t *)EE_SNOOZE, snooze);
       }
 
       if (pressed & 0x4)
-	delayms(75);
+        delayms(75);
 
     }
   }
@@ -1737,6 +1976,79 @@ void clock_init(void) {
 
   // enable all interrupts!
   sei();
+  countdown_init();
+}
+
+// Calculate or refresh time interval for countdown
+void countdown_init(void) {
+  end_year = eeprom_read_byte((uint8_t *)EE_CD_YEAR) % 100;
+  end_month = eeprom_read_byte((uint8_t *)EE_CD_MONTH) % 13;
+  end_day = eeprom_read_byte((uint8_t *)EE_CD_DAY) % 32;
+  end_hour = eeprom_read_byte((uint8_t *)EE_CD_HOUR) % 24;
+  end_min = eeprom_read_byte((uint8_t *)EE_CD_MIN) % 60;
+  cd_d  = dayofyear(end_year, end_month, end_day);
+  cd_d -= dayofyear(date_y, date_m, date_d);
+  cd_h  = end_hour - time_h;
+  cd_m  = end_min - time_m;
+  cd_s  = -time_s;
+  
+  uint8_t y = end_year;
+  while(y > date_y){
+    cd_d += 365;
+    if (leapyear(2000+y-1)) cd_d++;
+    y--;
+  } 
+  while(y < date_y){
+    cd_d -= 365;
+    if (leapyear(2000+y-1)) cd_d--;
+    y++;
+  } 
+  
+  if (cd_s<0) {
+    cd_s += 60;
+    cd_m--;
+  }
+  if (cd_m<0) {
+    cd_m += 60;
+    cd_h--;
+  }
+  if (cd_h<0) {
+    cd_h += 24;
+    cd_d--;
+  }
+}
+
+// day number in year
+int16_t dayofyear(uint8_t y, uint8_t m, uint8_t d){
+  uint16_t day = d;
+  switch(m) {
+  case 12:
+    day += 30; //add 30 days in Nov.
+  case 11:
+    day += 31; //add 31 days in Oct.
+  case 10:
+    day += 30; //add 30 days in Sep.
+  case 9:
+    day += 31; //add 31 days in Aug.
+  case 8:
+    day += 31; //add 31 days in Jul.
+  case 7:
+    day += 30; //add 30 days in Jun.
+  case 6:
+    day += 31; //add 31 days in May.
+  case 5:
+    day += 30; //add 30 days in Apr.
+  case 4:
+    day += 31; //add 31 days in Mar.
+  case 3:
+    day += 28; //add 28 days in Feb.
+    if (leapyear(2000+y)) day++; //plus one if needed for leapyear
+  case 2:
+    day += 31; //add 31 days in Jan.
+  case 1:
+  default:
+    return day;
+  }
 }
 
 // This turns on/off the alarm when the switch has been
@@ -1769,12 +2081,12 @@ void setalarmstate(void) {
       alarm_on = 0;
       snoozetimer = 0;
       if (alarming) {
-	// if the alarm is going off, we should turn it off
-	// and quiet the speaker
-	DEBUGP("alarm off");
-	alarming = 0;
-	TCCR1B &= ~_BV(CS11); // turn it off!
-	PORTB |= _BV(SPK1) | _BV(SPK2);
+        // if the alarm is going off, we should turn it off
+        // and quiet the speaker
+        DEBUGP("alarm off");
+        alarming = 0;
+        TCCR1B &= ~_BV(CS11); // turn it off!
+        PORTB |= _BV(SPK1) | _BV(SPK2);
       } 
     }
   }
@@ -2079,6 +2391,7 @@ void display_alarm(uint8_t h, uint8_t m){
   display[5] = pgm_read_byte(numbertable_p + (m % 10));
   display[4] = pgm_read_byte(numbertable_p + (m / 10)); 
   display[3] = 0;
+  
 
   // check euro or US style time
   if (region == REGION_US) {
@@ -2125,6 +2438,63 @@ void display_str(char *s) {
       display[i] = 0;      // spaces and other stuff are ignored :(
     }
   }
+}
+
+// display countdown
+void display_countdown(int16_t d, int8_t h, int8_t m, int8_t s){  
+  if (d<0){
+    d = -1 - d;
+    h = 23 - h;
+    m = 59 - m;
+    s = 59 - s;
+  }
+  if (d<100){
+    // seconds and minutes are at the end
+    display[8] = pgm_read_byte(numbertable_p + (s % 10));
+    display[7] = pgm_read_byte(numbertable_p + (s / 10));
+    display[6] = pgm_read_byte(numbertable_p + (m % 10)) | 0x01;
+    display[5] = pgm_read_byte(numbertable_p + (m / 10)); 
+    display[4] = pgm_read_byte(numbertable_p + (h % 10)) | 0x01;
+    display[3] = pgm_read_byte(numbertable_p + (h / 10)); 
+    display[2] = pgm_read_byte(numbertable_p + (d % 10)) | 0x01;
+    display[1] = pgm_read_byte(numbertable_p + (d / 10)); 
+    display[0] = 0;
+  } else {
+    display[8] = pgm_read_byte(numbertable_p + (m % 10));
+    display[7] = pgm_read_byte(numbertable_p + (m / 10)); 
+    display[6] = pgm_read_byte(numbertable_p + (h % 10)) | 0x01;
+    display[5] = pgm_read_byte(numbertable_p + (h / 10)); 
+    display[4] = pgm_read_byte(numbertable_p + (d % 10)) | 0x01;
+    display[3] = pgm_read_byte(numbertable_p + ((d / 10) % 10)); 
+    display[2] = pgm_read_byte(numbertable_p + ((d / 100) % 10)); 
+    display[1] = pgm_read_byte(numbertable_p + ((d / 1000) % 10));   
+    display[0] = 0;
+  }
+}
+
+// We can display the end of countdown
+void display_cd_date(void) {
+
+  // This type is mm-dd-yy OR dd-mm-yy depending on our pref.
+  display[0] = 0;
+  display[6] = display[3] = 0x02;     // put dashes between num
+
+  if (region == REGION_US) {
+    // mm-dd-yy
+    display[1] = pgm_read_byte(numbertable_p + (end_month / 10));
+    display[2] = pgm_read_byte(numbertable_p + (end_month % 10));
+    display[4] = pgm_read_byte(numbertable_p + (end_day / 10));
+    display[5] = pgm_read_byte(numbertable_p + (end_day % 10));
+  } else {
+    // dd-mm-yy
+    display[1] = pgm_read_byte(numbertable_p + (end_day / 10));
+    display[2] = pgm_read_byte(numbertable_p + (end_day % 10));
+    display[4] = pgm_read_byte(numbertable_p + (end_month / 10));
+    display[5] = pgm_read_byte(numbertable_p + (end_month % 10));
+  }
+  // the yy part is the same
+  display[7] = pgm_read_byte(numbertable_p + (end_year / 10));
+  display[8] = pgm_read_byte(numbertable_p + (end_year % 10));
 }
 
 /************************* LOW LEVEL DISPLAY ************************/

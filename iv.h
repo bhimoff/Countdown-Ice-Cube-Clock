@@ -9,6 +9,7 @@
     Canada/US rules by caitsith2
     Germany rules by bastard
  Testmode feature by caitsith2
+ Countdown by Brandon Himoff
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -54,7 +55,7 @@ THE SOFTWARE.
 
 #define halt(x)  while (1)
 
-#define DEBUG 0
+#define DEBUG 1
 #define DEBUGP(x)  if (DEBUG) {putstring_nl(x);}
 
 
@@ -96,6 +97,11 @@ THE SOFTWARE.
 #define EE_REGION 11
 #define EE_SNOOZE 12
 #define EE_DST 14
+#define EE_CD_YEAR 15
+#define EE_CD_MONTH 16
+#define EE_CD_DAY 17
+#define EE_CD_HOUR 18
+#define EE_CD_MIN 19
 
 void delay(uint16_t delay);
 
@@ -104,6 +110,8 @@ void (*app_start)(void) = 0x0000;
 // Add Initialization routine defines here.
 void init_eeprom(void);
 void clock_init(void);
+void countdown_init(void);
+int16_t dayofyear(uint8_t y, uint8_t m, uint8_t d);
 void initbuttons(void);
 void boost_init(uint8_t pwm);
 void vfd_init(void);
@@ -119,10 +127,14 @@ void display_date(uint8_t style);
 void display_str(char *s);
 void display_alarm(uint8_t h, uint8_t m);
 void display_brightness(int brightness);
+void display_countdown(int16_t d, int8_t h, int8_t m, int8_t s);
+void display_cd_date(void);
 
 void set_time(void);
 void set_alarm(void);
 void set_date(void);
+void set_cd_date(void);
+void set_cd_time(void);
 void set_brightness(void);
 void set_volume(void);
 void set_region(void);
@@ -157,6 +169,9 @@ void spi_xfer(uint8_t c);
 #define SET_SNOOZE 10
 #define TESTMODE 12
 #define SET_DAYLIGHTSAVINGTIME 13
+#define SHOW_COUNTDOWN 14
+#define SET_COUNTDOWN_DATE 15
+#define SET_COUNTDOWN_TIME 16
 
 // sub-mode settings
 #define SHOW_MENU 0

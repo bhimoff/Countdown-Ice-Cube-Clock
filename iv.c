@@ -499,7 +499,7 @@ SIGNAL (TIMER2_OVF_vect) {
 
 SIGNAL(SIG_INTERRUPT0) {
   EIMSK = 0;  //Disable this interrupt while we are processing it.
-  uart_putchar('i');
+  DEBUGP("i");
   uint8_t x = ALARM_PIN & _BV(ALARM);
   sei();
   delayms(10); // wait for debouncing

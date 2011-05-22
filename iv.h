@@ -52,6 +52,9 @@ THE SOFTWARE.
 // LadyAda implemented this, then commented it out.  I (caitsith2) just turned 
 // it into defines. 
 //#define FEATURE_SETSNOOZETIME
+// Countdown or countup from a settable date and time
+#define FEATURE_COUNTDOWN
+
 
 #define halt(x)  while (1)
 
@@ -110,8 +113,10 @@ void (*app_start)(void) = 0x0000;
 // Add Initialization routine defines here.
 void init_eeprom(void);
 void clock_init(void);
+#ifdef FEATURE_COUNTDOWN
 void countdown_init(void);
 int16_t dayofyear(uint8_t y, uint8_t m, uint8_t d);
+#endif
 void initbuttons(void);
 void boost_init(uint8_t pwm);
 void vfd_init(void);
@@ -127,14 +132,18 @@ void display_date(uint8_t style);
 void display_str(char *s);
 void display_alarm(uint8_t h, uint8_t m);
 void display_brightness(int brightness);
+#ifdef FEATURE_COUNTDOWN
 void display_countdown(int16_t d, int8_t h, int8_t m, int8_t s);
 void display_cd_date(void);
+#endif
 
 void set_time(void);
 void set_alarm(void);
 void set_date(void);
+#ifdef FEATURE_COUNTDOWN
 void set_cd_date(void);
 void set_cd_time(void);
+#endif
 void set_brightness(void);
 void set_volume(void);
 void set_region(void);
@@ -251,4 +260,4 @@ void spi_xfer(uint8_t c);
 #define DIG_8 7
 #define DIG_9 3
 
-#define nop asm("nop")
+

@@ -49,13 +49,14 @@ uint8_t region = REGION_US;
 volatile uint8_t time_s, time_m, time_h;
 // ... and current date
 volatile uint8_t date_m, date_d, date_y;
+#ifdef FEATURE_COUNTDOWN
 // ... and the countdown
 volatile int16_t cd_d;
 volatile int8_t cd_h, cd_m, cd_s;
 
 // hold end of countdown
 volatile uint8_t end_year, end_month, end_day, end_hour, end_min;
-
+#endif
 
 // how loud is the speaker supposed to be?
 volatile uint8_t volume;
@@ -345,7 +346,9 @@ void checkdstrule(uint8_t day1, uint8_t day2, uint8_t dayofweek, uint8_t month, 
           dst_set=1;
           time_h--;
         }
+#ifdef FEATURE_COUNTDOWN
         countdown_init(); //recalculate countdown
+#endif
         return; //Ignore day of week. Set day1 = day2 in this case.
       }
       if(dayofweek == dotw())
@@ -359,7 +362,9 @@ void checkdstrule(uint8_t day1, uint8_t day2, uint8_t dayofweek, uint8_t month, 
           dst_set=1;
           time_h--;
         }
+#ifdef FEATURE_COUNTDOWN
         countdown_init(); //recalculate countdown
+#endif
         return; //Used for a range of days,  typically for first sunday, or last sunday type rules.
       }
     }
@@ -393,7 +398,9 @@ SIGNAL (TIMER2_OVF_vect) {
 
   //if(displaymode!=SHOW_TIME)
     time_s++;             // one second has gone by
+#ifdef FEATURE_COUNTDOWN
     cd_s--;
+#endif
   //else
   //  time_s=60;  //Accellerate for debugging. Uncomment these lines only for that purpose.
 
@@ -402,11 +409,12 @@ SIGNAL (TIMER2_OVF_vect) {
     time_s = 0;
     time_m++;
   }
+#ifdef FEATURE_COUNTDOWN
   if (cd_s < 0) {
     cd_s = 59;
     cd_m--;
   }
-
+#endif
   // an hour...
   if (time_m >= 60) {
     time_m = 0;
@@ -435,10 +443,12 @@ SIGNAL (TIMER2_OVF_vect) {
     eeprom_write_byte((uint8_t *)EE_HOUR, time_h);
     eeprom_write_byte((uint8_t *)EE_MIN, time_m);
   }
+#ifdef FEATURE_COUNTDOWN
   if (cd_m < 0) {
     cd_m = 59;
     cd_h--; 
   }
+#endif
   
   // a day....
   if (time_h >= 24) {
@@ -446,10 +456,12 @@ SIGNAL (TIMER2_OVF_vect) {
     date_d++;
     eeprom_write_byte((uint8_t *)EE_DAY, date_d);
   }
+#ifdef FEATURE_COUNTDOWN
   if (cd_h < 0) {
     cd_h = 23;
     cd_d--;
   }
+#endif
 
   /*
   if (! sleepmode) {
@@ -497,6 +509,7 @@ SIGNAL (TIMER2_OVF_vect) {
       display[0] &= ~0x2;
     
   }
+#ifdef FEATURE_COUNTDOWN
   if (displaymode == SHOW_COUNTDOWN) {
     if (timeunknown && (time_s % 2)) {
       display_str("        ");
@@ -509,6 +522,7 @@ SIGNAL (TIMER2_OVF_vect) {
       display[0] &= ~0x2;
     
   }
+#endif
   if (alarm_on && (alarm_h == time_h) && (alarm_m == time_m) && (time_s == 0)) {
     DEBUGP("alarm on!");
     alarming = 1;
@@ -602,11 +616,13 @@ void initeeprom(void) {
     eeprom_write_byte((uint8_t*)EE_REGION, REGION_US);  //12 Hour mode
     eeprom_write_byte((uint8_t*)EE_SNOOZE, 10);     //10 Minute Snooze. (If compiled in.)
     eeprom_write_byte((uint8_t*)EE_DST, 0);         //No Daylight Saving Time
+#ifdef FEATURE_COUNTDOWN
     eeprom_write_byte((uint8_t*)EE_CD_YEAR, 11);         //Countdown to Date
     eeprom_write_byte((uint8_t*)EE_CD_MONTH, 1); 
     eeprom_write_byte((uint8_t*)EE_CD_DAY, 0); 
     eeprom_write_byte((uint8_t*)EE_CD_HOUR, 0); 
     eeprom_write_byte((uint8_t*)EE_CD_MIN, 0); 
+#endif
     beep(3000,2);                                   //And acknowledge EEPROM written.
   }
 
@@ -1047,9 +1063,11 @@ int main(void) {
       just_pressed = 0;
       switch(displaymode) {
       case (SHOW_TIME):
+#ifdef FEATURE_COUNTDOWN
         displaymode = SHOW_COUNTDOWN;
         break;
       case (SHOW_COUNTDOWN):
+#endif
         displaymode = SET_ALARM;
         display_str("set alarm");
         set_alarm();
@@ -1066,6 +1084,7 @@ int main(void) {
         set_date();
         break;
       case (SET_DATE):
+#ifdef FEATURE_COUNTDOWN
         displaymode = SET_COUNTDOWN_DATE;
         display_str("cnt date");
         set_cd_date();
@@ -1076,6 +1095,7 @@ int main(void) {
         set_cd_time();
         break;
       case (SET_COUNTDOWN_TIME):
+#endif
         displaymode = SET_BRIGHTNESS;
         display_str("set brit");
         set_brightness();
@@ -1281,7 +1301,9 @@ void set_time(void)
         display[2] |= 0x1;
         time_h = hour;
         eeprom_write_byte((uint8_t *)EE_HOUR, time_h);    
+#ifdef FEATURE_COUNTDOWN
         countdown_init(); //recalculate countdown
+#endif
       }
       if (mode == SET_MIN) {
         min = (min+1) % 60;
@@ -1290,7 +1312,9 @@ void set_time(void)
         display[5] |= 0x1;
         eeprom_write_byte((uint8_t *)EE_MIN, time_m);
         time_m = min;
+#ifdef FEATURE_COUNTDOWN
         countdown_init(); //recalculate countdown
+#endif
       }
       if ((mode == SET_SEC) ) {
         sec = (sec+1) % 60;
@@ -1298,7 +1322,9 @@ void set_time(void)
         display[7] |= 0x1;
         display[8] |= 0x1;
         time_s = sec;
+#ifdef FEATURE_COUNTDOWN
         countdown_init(); //recalculate countdown
+#endif
       }
       
       if (pressed & 0x4)
@@ -1378,7 +1404,9 @@ void set_date(void) {
           display[5] |= 0x1;
         }
         eeprom_write_byte((uint8_t *)EE_MONTH, date_m);  
+#ifdef FEATURE_COUNTDOWN
         countdown_init(); //recalculate countdown
+#endif
       }
       if (mode == SET_DAY) {
         date_d++;
@@ -1394,7 +1422,9 @@ void set_date(void) {
           display[5] |= 0x1;
         }
         eeprom_write_byte((uint8_t *)EE_DAY, date_d);    
+#ifdef FEATURE_COUNTDOWN
         countdown_init(); //recalculate countdown
+#endif
       }
       if (mode == SET_YEAR) {
         date_y++;
@@ -1403,7 +1433,9 @@ void set_date(void) {
         display[7] |= 0x1;
         display[8] |= 0x1;
         eeprom_write_byte((uint8_t *)EE_YEAR, date_y);    
+#ifdef FEATURE_COUNTDOWN
         countdown_init(); //recalculate countdown
+#endif
       }
 
       if (pressed & 0x4)
@@ -1412,7 +1444,7 @@ void set_date(void) {
   }
 }
 
-
+#ifdef FEATURE_COUNTDOWN
 void set_cd_date(void) {
   uint8_t mode = SHOW_MENU;
 
@@ -1594,7 +1626,7 @@ void set_cd_time(void)
     }
   }
 }
-
+#endif
 
 void set_brightness(void) {
   uint8_t mode = SHOW_MENU;
@@ -1978,9 +2010,12 @@ void clock_init(void) {
 
   // enable all interrupts!
   sei();
+#ifdef FEATURE_COUNTDOWN
   countdown_init();
+#endif
 }
 
+#ifdef FEATURE_COUNTDOWN
 // Calculate or refresh time interval for countdown
 void countdown_init(void) {
   end_year = eeprom_read_byte((uint8_t *)EE_CD_YEAR) % 100;
@@ -2052,6 +2087,7 @@ int16_t dayofyear(uint8_t y, uint8_t m, uint8_t d){
     return day;
   }
 }
+#endif
 
 // This turns on/off the alarm when the switch has been
 // set. It also displays the alarm time
@@ -2393,7 +2429,7 @@ void display_alarm(uint8_t h, uint8_t m){
   display[5] = pgm_read_byte(numbertable_p + (m % 10));
   display[4] = pgm_read_byte(numbertable_p + (m / 10)); 
   display[3] = 0;
-  
+
 
   // check euro or US style time
   if (region == REGION_US) {
@@ -2442,6 +2478,7 @@ void display_str(char *s) {
   }
 }
 
+#ifdef FEATURE_COUNTDOWN
 // display countdown
 void display_countdown(int16_t d, int8_t h, int8_t m, int8_t s){  
   if (d<0){
@@ -2476,7 +2513,6 @@ void display_countdown(int16_t d, int8_t h, int8_t m, int8_t s){
 
 // We can display the end of countdown
 void display_cd_date(void) {
-
   // This type is mm-dd-yy OR dd-mm-yy depending on our pref.
   display[0] = 0;
   display[6] = display[3] = 0x02;     // put dashes between num
@@ -2498,6 +2534,7 @@ void display_cd_date(void) {
   display[7] = pgm_read_byte(numbertable_p + (end_year / 10));
   display[8] = pgm_read_byte(numbertable_p + (end_year % 10));
 }
+#endif
 
 /************************* LOW LEVEL DISPLAY ************************/
 
@@ -2551,4 +2588,3 @@ void spi_xfer(uint8_t c) {
   SPDR = c;
   while (! (SPSR & _BV(SPIF)));
 }
-

@@ -31,9 +31,9 @@ THE SOFTWARE.
 
 // Optional Features - #define these or not as desired.
 // Auto-dimmer - requires a photocell hooked up to the hax0r port
-#define FEATURE_AUTODIM
+//#define FEATURE_AUTODIM
 // Display digit "9" in the usual way (instead of the default with no bottom segment)
-#define FEATURE_9
+//#define FEATURE_9
 // Enables Daylight Saving Time.
 #define FEATURE_DST
 #ifdef FEATURE_DST
@@ -41,12 +41,12 @@ THE SOFTWARE.
   #define DST_OFF 0
   //under the following rules. (Try to have at least one #defined.)
   #define DST_USA 1
-  #define DST_GERMANY 2
+  //#define DST_GERMANY 2
   //feel free to add your contry's rule set for DST here.
 #endif
 // Allows Testing of the Hardware.  If FEATURE_AUTODIM is enabled, it will
 // include testing of the hax0r port photocell.
-#define FEATURE_TESTMODE
+//#define FEATURE_TESTMODE
 // Allows setting how long a snooze period lasts for. (10 minutes default.)
 // LadyAda implemented this, then commented it out.  I (caitsith2) just turned 
 // it into defines. 
@@ -54,7 +54,7 @@ THE SOFTWARE.
 
 #define halt(x)  while (1)
 
-#define DEBUG 1
+#define DEBUG 0
 #define DEBUGP(x)  if (DEBUG) {putstring_nl(x);}
 
 

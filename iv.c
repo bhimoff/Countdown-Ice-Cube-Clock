@@ -1541,11 +1541,7 @@ void set_cd_time(void)
       // timeout w/no buttons pressed after 3 seconds?
     } else if (!timeoutcounter) {
       //timed out!
-      displaymode = SHOW_TIME;     
-      end_hour = hour;
-      end_min = min;
-        eeprom_write_byte((uint8_t *)EE_CD_HOUR, end_hour);    
-        eeprom_write_byte((uint8_t *)EE_CD_MIN, end_min);    
+        displaymode = SHOW_TIME;     
       return;
     }
     if (just_pressed & 0x2) {
@@ -1563,10 +1559,6 @@ void set_cd_time(void)
         display[5] |= 0x1;
       } else {
         // done!
-        end_hour = hour;
-        end_min = min;
-        eeprom_write_byte((uint8_t *)EE_CD_HOUR, end_hour);    
-        eeprom_write_byte((uint8_t *)EE_CD_MIN, end_min);    
         displaymode = SHOW_TIME;
         return;
       }
@@ -1579,12 +1571,22 @@ void set_cd_time(void)
         display_alarm(hour, min);
         display[1] |= 0x1;
         display[2] |= 0x1;
+        end_hour = hour;
+        end_min = min;
+        eeprom_write_byte((uint8_t *)EE_CD_HOUR, end_hour);    
+        eeprom_write_byte((uint8_t *)EE_CD_MIN, end_min);    
+        countdown_init(); //recalculate countdown
       }
       if (mode == SET_MIN) {
         min = (min+1) % 60;
         display_alarm(hour, min);
         display[4] |= 0x1;
         display[5] |= 0x1;
+        end_hour = hour;
+        end_min = min;
+        eeprom_write_byte((uint8_t *)EE_CD_HOUR, end_hour);    
+        eeprom_write_byte((uint8_t *)EE_CD_MIN, end_min);    
+        countdown_init(); //recalculate countdown
       }
 
       if (pressed & 0x4)
